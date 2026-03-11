@@ -14,7 +14,12 @@ export async function PATCH(req: NextRequest, { params }: Props) {
   const body = await req.json() as Record<string, unknown>
 
   // Only allow updating safe fields
-  const allowedFields = ['notes', 'status']
+  const allowedFields = [
+    'notes', 'status',
+    'title', 'address', 'lat', 'lng',
+    'price', 'beds', 'baths', 'sqft',
+    'description', 'available_date', 'amenities',
+  ]
   const updates: Record<string, unknown> = {}
   for (const field of allowedFields) {
     if (field in body) updates[field] = body[field]

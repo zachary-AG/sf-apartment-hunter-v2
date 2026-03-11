@@ -156,7 +156,7 @@ export function SettingsClient({
         </div>
 
         <div className="space-y-6">
-          {/* Gmail Connection */}
+          {/* EMAIL_DISABLED: Gmail Connection — re-enable when email feature is live
           <div className="bg-white rounded-lg border border-zinc-200 p-5">
             <h2 className="text-sm font-semibold text-zinc-900 mb-3">Gmail Connection</h2>
             {gmailEmail ? (
@@ -182,6 +182,7 @@ export function SettingsClient({
               </div>
             )}
           </div>
+          */}
 
           {/* Commute Settings */}
           <div className="bg-white rounded-lg border border-zinc-200 p-5">

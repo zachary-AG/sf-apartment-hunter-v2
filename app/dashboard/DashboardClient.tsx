@@ -80,7 +80,7 @@ export function DashboardClient({ initialListings, workLocation }: DashboardClie
             <h1 className="text-[13px] font-semibold tracking-tight text-zinc-900">SF Apartment Hunter</h1>
           </div>
           <div className="flex items-center gap-3">
-            <a href="/settings" className="text-[11px] font-medium text-zinc-400 hover:text-zinc-600 transition-colors tracking-wide uppercase">Settings</a>
+            <a href="/settings" className="text-[11px] font-medium text-zinc-800 hover:text-zinc-600 transition-colors tracking-wide uppercase">Settings</a>
             <UserButton />
           </div>
         </div>

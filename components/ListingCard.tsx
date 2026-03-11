@@ -80,11 +80,6 @@ export function ListingCard({ listing, onDelete, onHover }: ListingCardProps) {
     ].filter(Boolean).join(' ')
     detailCells.push({ label: 'Beds/Baths', value: bedBath })
   }
-  if (listing.sqft != null) detailCells.push({ label: 'Sqft', value: listing.sqft.toLocaleString() })
-  if (listing.available_date) {
-    const d = new Date(listing.available_date)
-    detailCells.push({ label: 'Available', value: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) })
-  }
 
   return (
     <div
@@ -104,8 +99,8 @@ export function ListingCard({ listing, onDelete, onHover }: ListingCardProps) {
       <Link href={`/dashboard/${listing.id}`} className="flex min-w-0">
         {/* Image — 35% width */}
         <div
-          className="relative flex-shrink-0 bg-zinc-100 overflow-hidden"
-          style={{ width: '35%', height: '140px' }}
+          className="relative flex-shrink-0 bg-zinc-100 overflow-hidden self-stretch"
+          style={{ width: '35%' }}
           onMouseEnter={() => setImgHovered(true)}
           onMouseLeave={() => setImgHovered(false)}
         >
@@ -115,7 +110,7 @@ export function ListingCard({ listing, onDelete, onHover }: ListingCardProps) {
                 src={thumbnail}
                 alt={displayTitle}
                 fill
-                className="object-cover"
+                className="object-cover object-center"
                 unoptimized
               />
               {hasMultiple && imgHovered && (

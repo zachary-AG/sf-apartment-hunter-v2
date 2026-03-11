@@ -41,17 +41,17 @@ function pinIcon(color: string, scale: number): google.maps.Icon {
 
 function workPinIcon(): google.maps.Icon {
   const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="36" height="44" viewBox="0 0 36 44">
-      <path d="M18 0C8.06 0 0 8.06 0 18c0 13.5 18 26 18 26S36 31.5 36 18C36 8.06 27.94 0 18 0z" fill="#0ea5e9"/>
-      <rect x="10" y="11" width="16" height="14" rx="2" fill="white"/>
-      <rect x="14" y="8" width="8" height="4" rx="1" fill="white" opacity="0.8"/>
-      <rect x="14" y="8" width="8" height="3" rx="1" fill="#0ea5e9"/>
-      <rect x="16" y="16" width="4" height="5" rx="0.5" fill="#0ea5e9"/>
+    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="40" viewBox="0 0 28 40">
+      <path d="M14 0C6.27 0 0 6.27 0 14c0 10.5 14 26 14 26S28 24.5 28 14C28 6.27 21.73 0 14 0z" fill="#0ea5e9"/>
+      <rect x="7" y="14" width="14" height="10" rx="1.5" fill="white"/>
+      <rect x="9" y="10" width="10" height="4" rx="1" fill="white" opacity="0.8"/>
+      <rect x="10" y="11" width="8" height="3" rx="1" fill="#0ea5e9"/>
+      <rect x="12" y="17" width="4" height="4" rx="0.5" fill="#0ea5e9"/>
     </svg>`.trim()
   return {
     url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
-    scaledSize: new google.maps.Size(36, 44),
-    anchor: new google.maps.Point(18, 44),
+    scaledSize: new google.maps.Size(28, 40),
+    anchor: new google.maps.Point(14, 40),
   }
 }
 
