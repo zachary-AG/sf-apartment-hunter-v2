@@ -85,6 +85,18 @@ export function DashboardClient({ initialListings, workLocation }: DashboardClie
           </div>
         </div>
 
+        {/* Work address nudge */}
+        {!workLocation && (
+          <div className="mx-4 mt-3 mb-1 flex items-start gap-2.5 rounded-lg bg-amber-50 border border-amber-200 px-3.5 py-2.5">
+            <span className="text-amber-500 text-base leading-none mt-px">!</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-[12px] font-medium text-amber-800 leading-snug">Add your work address</p>
+              <p className="text-[11px] text-amber-700 mt-0.5 leading-snug">Commute times won&apos;t show until you set it.</p>
+            </div>
+            <a href="/settings" className="shrink-0 text-[11px] font-semibold text-amber-700 hover:text-amber-900 underline underline-offset-2 transition-colors mt-px">Settings</a>
+          </div>
+        )}
+
         {/* Add Listing */}
         <div className="px-5 py-3 border-b border-zinc-100">
           <button

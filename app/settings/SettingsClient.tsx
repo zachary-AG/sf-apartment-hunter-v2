@@ -231,31 +231,6 @@ export function SettingsClient({
               )}
             </div>
 
-            {/* Commute Mode */}
-            <label className="block text-xs font-medium text-zinc-600 mb-2">Commute Mode</label>
-            <div className="flex gap-2 mb-4">
-              <button
-                type="button"
-                onClick={() => setCommuteMode('transit')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all
-                  ${commuteMode === 'transit'
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50'}`}
-              >
-                🚇 Public Transit
-              </button>
-              <button
-                type="button"
-                onClick={() => setCommuteMode('walking')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all
-                  ${commuteMode === 'walking'
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50'}`}
-              >
-                🚶 Walking
-              </button>
-            </div>
-
             <div className="flex items-center gap-3">
               <button
                 onClick={savePreferences}

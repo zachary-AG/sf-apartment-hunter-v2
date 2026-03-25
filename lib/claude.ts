@@ -4,17 +4,39 @@ import type { ParsedListing, Listing, ZillowUnit, Amenities } from '@/types'
 const client = new Anthropic()
 
 export async function extractListingWithClaude(html: string): Promise<ParsedListing> {
-  // Strip scripts, styles, nav
-  const cleaned = html
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
-    .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
-    .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 8000)
+  // For JS-rendered pages (e.g. apartments.com), visible text after stripping scripts is empty.
+  // Extract content from inline script tags instead, which contain the embedded JSON data.
+  const scriptContents: string[] = []
+  const scriptPattern = /<script[^>]*>([\s\S]*?)<\/script>/gi
+  let scriptMatch
+  while ((scriptMatch = scriptPattern.exec(html)) !== null) {
+    const content = scriptMatch[1].trim()
+    // Only keep scripts that look like they contain listing data (JSON-like, has property keywords)
+    if (content.length > 200 && /address|price|bedroom|bathroom|sqft|amenity/i.test(content)) {
+      scriptContents.push(content.slice(0, 3000))
+    }
+  }
+
+  let cleaned: string
+  if (scriptContents.length > 0) {
+    // Use script data — strip HTML tags from any remaining markup then join
+    cleaned = scriptContents.join('\n').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 8000)
+    console.log(`[Claude][Extract] Using ${scriptContents.length} script blocks, cleaned length: ${cleaned.length}`)
+    console.log(`[Claude][Extract] First 500 chars sent to Claude: ${cleaned.slice(0, 500)}`)
+  } else {
+    console.log(`[Claude][Extract] No matching scripts found, using stripped visible HTML`)
+    // Fallback: strip scripts/styles and use visible text (works for static pages like Craigslist)
+    cleaned = html
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
+      .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
+      .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 8000)
+  }
 
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
@@ -58,12 +80,19 @@ ${cleaned}`,
   })
 
   const text = message.content[0].type === 'text' ? message.content[0].text : ''
-  const jsonMatch = text.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) return {}
+  console.log(`[Claude][Extract] Raw response (first 300 chars): ${text.slice(0, 300)}`)
+  // Strip markdown code fences if present (Claude sometimes wraps JSON in ```json ... ```)
+  const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '')
+  const jsonMatch = stripped.match(/\{[\s\S]*\}/)
+  if (!jsonMatch) {
+    console.log(`[Claude][Extract] No JSON found in response`)
+    return {}
+  }
 
   try {
     return JSON.parse(jsonMatch[0]) as ParsedListing
   } catch {
+    console.log(`[Claude][Extract] JSON parse failed`)
     return {}
   }
 }
@@ -147,7 +176,8 @@ ${content}`,
   const text = message.content[0].type === 'text' ? message.content[0].text : ''
   console.log(`[Claude][Zillow] Raw response: ${text.slice(0, 400)}`)
 
-  const jsonMatch = text.match(/\{[\s\S]*\}/)
+  const stripped2 = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '')
+  const jsonMatch = stripped2.match(/\{[\s\S]*\}/)
   if (!jsonMatch) return empty
 
   try {

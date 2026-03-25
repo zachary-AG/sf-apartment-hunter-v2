@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
-import { parseCraigslist, parseZillow, parseApartments } from '@/scrapers/parsers'
+import { parseCraigslist, parseZillow } from '@/scrapers/parsers'
+import { parseApartments } from '@/scrapers/parsers/apartments'
 import { extractListingWithClaude, extractZillowData, draftInquiryEmail } from '@/lib/claude'
 import { geocodeAddress } from '@/lib/geocode'
 import { calculateCommuteBothModes } from '@/lib/commute'
@@ -122,10 +123,16 @@ async function fetchPage(url: string): Promise<string> {
       body: JSON.stringify({ zone: 'mcp_unlocker', url, format: 'raw' }),
     })
     if (res.ok) {
-      console.log('[Ingest] Bright Data Web Unlocker success')
-      return await res.text()
+      const text = await res.text()
+      if (!text.trim()) {
+        console.error('[Ingest] Bright Data Web Unlocker returned empty body')
+      } else {
+        console.log('[Ingest] Bright Data Web Unlocker success')
+        return text
+      }
+    } else {
+      console.error(`[Ingest] Bright Data Web Unlocker returned ${res.status}`)
     }
-    console.error(`[Ingest] Bright Data Web Unlocker returned ${res.status}`)
   }
 
   throw new Error('Failed to fetch page')
@@ -309,15 +316,49 @@ export async function POST(req: NextRequest) {
         return
 
       } else if (source === 'apartments') {
-        parsed = parseApartments(html)
+        // apartments.com is JS-rendered — Cheerio can't find text fields reliably.
+        // Always use Claude for text data; Cheerio still extracts images from inline scripts.
+        const cheerioResult = parseApartments(html)
+        const cheerioImages = cheerioResult.images ?? []
+        console.log(`[Ingest][Apartments] HTML length: ${html.length} chars`)
+        console.log(`[Ingest][Apartments] Cheerio found ${cheerioImages.length} images:`)
+        cheerioImages.forEach((u, i) => console.log(`  [${i}] ${u}`))
+
+        try {
+          const claudeParsed = await extractListingWithClaude(html)
+          console.log(`[Ingest][Apartments] Claude parsed:`, JSON.stringify(claudeParsed, null, 2))
+          // Merge: Cheerio images first (class-filtered), then any Claude found
+          const claudeImages = claudeParsed.images ?? []
+          const mergedImages = [...new Set([...cheerioImages, ...claudeImages])].slice(0, 20)
+          parsed = { ...claudeParsed, images: mergedImages }
+        } catch (err) {
+          console.error('[Ingest][Apartments] Claude extraction failed:', err)
+          parsed = { images: [...new Set([...cheerioImages])].slice(0, 20) }
+        }
+        console.log(`[Ingest][Apartments] Final parsed missing fields:`, missingRequiredFields(parsed))
+
+        // If the scrape came back completely empty (no address, title, price, or images),
+        // the page likely didn't render properly — surface an error instead of a blank modal.
+        const totallyBlank = !parsed.address && !parsed.title && parsed.price == null && !(parsed.images?.length)
+        if (totallyBlank) {
+          emit('done', { error: 'Could not extract any listing data from this page. The site may have blocked the request — try again or check that the URL is a single listing page.' })
+          writer.close()
+          return
+        }
+
+        // Always show confirm modal for apartments.com — multi-unit buildings need user verification
+        const apartmentsMissing = missingRequiredFields(parsed)
+        emit('done', { missingFields: apartmentsMissing, partialData: parsed, url, source })
+        writer.close()
+        return
       }
 
-      // Non-Zillow: Claude fallback if required fields missing.
+      // Non-Zillow / non-Apartments: Claude fallback if required fields still missing.
       // If we already have an address from Cheerio, kick off geocoding in parallel with Claude.
       const addressBeforeClaude = parsed.address
       let earlyGeocodePromise: Promise<{ lat: number; lng: number } | null> | null = null
 
-      if (missingRequiredFields(parsed).length > 0) {
+      if (source !== 'apartments' && missingRequiredFields(parsed).length > 0) {
         if (addressBeforeClaude) {
           earlyGeocodePromise = geocodeAddress(addressBeforeClaude)
         }
@@ -369,7 +410,7 @@ export async function POST(req: NextRequest) {
           title: parsed.title || '', address: parsed.address || '',
           neighborhood: parsed.neighborhood || null, lat, lng,
           price: parsed.price || null, price_max: null,
-          beds: parsed.beds || null, baths: parsed.baths || null,
+          beds: parsed.beds ?? null, baths: parsed.baths ?? null,
           sqft: parsed.sqft || null, description: parsed.description || null,
           images: parsed.images || [], contact_email: parsed.contact_email || null,
           available_date: parsed.available_date || null, amenities: parsed.amenities ?? null,

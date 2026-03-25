@@ -83,7 +83,7 @@ export function ListingCard({ listing, onDelete, onHover }: ListingCardProps) {
 
   return (
     <div
-      className="relative mx-3 mb-2 rounded-xl border border-zinc-100 hover:border-zinc-200 hover:bg-zinc-50/60 transition-all cursor-pointer group overflow-hidden"
+      className="relative mx-3 mb-2 rounded-xl border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/60 transition-all cursor-pointer group overflow-hidden"
       onMouseEnter={() => onHover?.(listing.id)}
       onMouseLeave={() => onHover?.(null)}
     >
