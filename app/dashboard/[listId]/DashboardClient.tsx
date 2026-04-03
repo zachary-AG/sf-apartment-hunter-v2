@@ -1,11 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Map } from '@/components/Map'
 import { ListingCard } from '@/components/ListingCard'
 import { AddListingModal } from '@/components/AddListingModal'
 import { UserButton } from '@clerk/nextjs'
-import type { Listing } from '@/types'
+import Link from 'next/link'
+import type { Listing, ListMember, ListingCommute } from '@/types'
 
 function Spinner({ dark }: { dark?: boolean }) {
   return (
@@ -17,17 +19,36 @@ function Spinner({ dark }: { dark?: boolean }) {
 }
 
 interface DashboardClientProps {
+  listId: string
+  listName: string
+  inviteCode: string
   initialListings: Listing[]
-  workLocation: { lat: number; lng: number } | null
+  members: ListMember[]
+  commutes: Record<string, ListingCommute[]>
+  workLocations: { lat: number; lng: number; displayName: string; color: string }[]
+  currentUserId: string
 }
 
-export function DashboardClient({ initialListings, workLocation }: DashboardClientProps) {
+export function DashboardClient({
+  listId,
+  listName,
+  inviteCode,
+  initialListings,
+  members,
+  commutes: initialCommutes,
+  workLocations,
+  currentUserId,
+}: DashboardClientProps) {
   const [listings, setListings] = useState<Listing[]>(initialListings)
+  const [commutes, setCommutes] = useState<Record<string, ListingCommute[]>>(initialCommutes)
   const [showAddModal, setShowAddModal] = useState(false)
   const [showCrime, setShowCrime] = useState(false)
   const [hoveredListingId, setHoveredListingId] = useState<string | null>(null)
   const [crimeLoading, setCrimeLoading] = useState(false)
   const [crimeToast, setCrimeToast] = useState<string | null>(null)
+  const [inviteCopied, setInviteCopied] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const router = useRouter()
 
   // Geocode any listings that are missing lat/lng
   useEffect(() => {
@@ -43,50 +64,96 @@ export function DashboardClient({ initialListings, workLocation }: DashboardClie
       const data = await res.json() as {
         lat?: number | null
         lng?: number | null
-        commute_minutes_transit?: number | null
-        commute_minutes_walking?: number | null
+        commutes?: ListingCommute[]
       }
       if (data.lat != null && data.lng != null) {
         setListings(prev =>
-          prev.map(l => l.id === listing.id ? {
-            ...l,
-            lat: data.lat!,
-            lng: data.lng!,
-            commute_minutes_transit: data.commute_minutes_transit ?? l.commute_minutes_transit,
-            commute_minutes_walking: data.commute_minutes_walking ?? l.commute_minutes_walking,
-          } : l)
+          prev.map(l => l.id === listing.id ? { ...l, lat: data.lat!, lng: data.lng! } : l)
         )
+        if (data.commutes?.length) {
+          setCommutes(prev => ({ ...prev, [listing.id]: data.commutes! }))
+        }
       }
     })
-  // Run once on mount — intentionally not re-running when listings changes
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  function handleListingAdded(listing: Listing) {
+  function handleListingAdded(listing: Listing, newCommutes?: ListingCommute[]) {
     setListings(prev => [listing, ...prev])
+    if (newCommutes?.length) {
+      setCommutes(prev => ({ ...prev, [listing.id]: newCommutes }))
+    }
   }
 
   function handleDelete(id: string) {
     setListings(prev => prev.filter(l => l.id !== id))
+    setCommutes(prev => {
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
   }
+
+  async function handleDeleteList() {
+    if (!confirm(`Delete "${listName}"? All listings will be permanently removed.`)) return
+    setDeleting(true)
+    try {
+      await fetch(`/api/lists/${listId}`, { method: 'DELETE' })
+      router.push('/dashboard')
+    } catch {
+      setDeleting(false)
+    }
+  }
+
+  function copyInviteLink() {
+    const url = `${window.location.origin}/invite/${inviteCode}`
+    navigator.clipboard.writeText(url).then(() => {
+      setInviteCopied(true)
+      setTimeout(() => setInviteCopied(false), 2000)
+    })
+  }
+
+  const hasMultipleMembers = members.length > 1
+  const isOwner = members.find(m => m.user_id === currentUserId)?.role === 'owner'
 
   return (
     <div className="flex h-screen overflow-hidden bg-zinc-50">
-      {/* Left panel — 45% width */}
+      {/* Left panel */}
       <div className="w-[45%] max-w-[680px] flex-shrink-0 flex flex-col border-r border-zinc-200/80 bg-white shadow-[1px_0_0_0_rgba(0,0,0,0.04)]">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100">
-          <div>
-            <h1 className="text-[13px] font-semibold tracking-tight text-zinc-900">SF Apartment Hunter</h1>
+          <div className="flex items-center gap-3 min-w-0">
+            <Link href="/dashboard" className="text-zinc-400 hover:text-zinc-600 text-sm flex-shrink-0">
+              ←
+            </Link>
+            <h1 className="text-[13px] font-semibold tracking-tight text-zinc-900 truncate">{listName}</h1>
+            <span className="text-[11px] text-zinc-400 flex-shrink-0">{members.length} member{members.length !== 1 ? 's' : ''}</span>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-shrink-0">
+            {isOwner && (
+              <button
+                onClick={copyInviteLink}
+                className="text-[11px] font-medium text-blue-600 hover:text-blue-800 transition-colors"
+              >
+                {inviteCopied ? '✓ Copied!' : 'Invite'}
+              </button>
+            )}
+            {isOwner && (
+              <button
+                onClick={handleDeleteList}
+                disabled={deleting}
+                className="text-[11px] font-medium text-red-500 hover:text-red-700 disabled:opacity-50 transition-colors"
+              >
+                {deleting ? 'Deleting…' : 'Delete list'}
+              </button>
+            )}
             <a href="/settings" className="text-[11px] font-medium text-zinc-800 hover:text-zinc-600 transition-colors tracking-wide uppercase">Settings</a>
             <UserButton />
           </div>
         </div>
 
         {/* Work address nudge */}
-        {!workLocation && (
+        {workLocations.length === 0 && (
           <div className="mx-4 mt-3 mb-1 flex items-start gap-2.5 rounded-lg bg-amber-50 border border-amber-200 px-3.5 py-2.5">
             <span className="text-amber-500 text-base leading-none mt-px">!</span>
             <div className="flex-1 min-w-0">
@@ -94,6 +161,26 @@ export function DashboardClient({ initialListings, workLocation }: DashboardClie
               <p className="text-[11px] text-amber-700 mt-0.5 leading-snug">Commute times won&apos;t show until you set it.</p>
             </div>
             <a href="/settings" className="shrink-0 text-[11px] font-semibold text-amber-700 hover:text-amber-900 underline underline-offset-2 transition-colors mt-px">Settings</a>
+          </div>
+        )}
+
+        {/* Members bar (only show when collaborative) */}
+        {hasMultipleMembers && (
+          <div className="px-5 py-2 border-b border-zinc-100 flex items-center gap-2 flex-wrap">
+            {members.map((m, i) => {
+              const COLORS = ['#3b82f6', '#f97316', '#10b981', '#8b5cf6', '#ef4444', '#06b6d4']
+              const color = COLORS[i % COLORS.length]
+              return (
+                <span
+                  key={m.user_id}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium"
+                  style={{ backgroundColor: color + '18', color }}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
+                  {m.display_name}{m.user_id === currentUserId ? ' (you)' : ''}
+                </span>
+              )
+            })}
           </div>
         )}
 
@@ -127,6 +214,8 @@ export function DashboardClient({ initialListings, workLocation }: DashboardClie
                 <ListingCard
                   key={listing.id}
                   listing={listing}
+                  commutes={commutes[listing.id] ?? []}
+                  listId={listId}
                   onDelete={handleDelete}
                   onHover={setHoveredListingId}
                 />
@@ -162,7 +251,7 @@ export function DashboardClient({ initialListings, workLocation }: DashboardClie
           listings={listings}
           showCrime={showCrime}
           hoveredListingId={hoveredListingId}
-          workLocation={workLocation}
+          workLocations={workLocations}
           onCrimeLoadingChange={setCrimeLoading}
           onCrimeError={() => {
             setShowCrime(false)
@@ -171,7 +260,6 @@ export function DashboardClient({ initialListings, workLocation }: DashboardClie
           }}
         />
 
-        {/* Crime loading overlay */}
         {crimeLoading && (
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 bg-white/95 backdrop-blur-sm rounded-full px-4 py-2 shadow-md border border-zinc-100 text-xs text-zinc-600 font-medium">
             <Spinner dark />
@@ -179,7 +267,6 @@ export function DashboardClient({ initialListings, workLocation }: DashboardClie
           </div>
         )}
 
-        {/* Toast */}
         {crimeToast && (
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 bg-zinc-900 text-white text-xs rounded-xl px-4 py-2.5 shadow-xl">
             {crimeToast}
@@ -189,6 +276,7 @@ export function DashboardClient({ initialListings, workLocation }: DashboardClie
 
       {showAddModal && (
         <AddListingModal
+          listId={listId}
           onClose={() => setShowAddModal(false)}
           onAdded={handleListingAdded}
         />

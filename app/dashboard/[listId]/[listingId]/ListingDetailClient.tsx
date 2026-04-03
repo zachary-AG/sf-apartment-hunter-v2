@@ -4,21 +4,18 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { ImageCarousel } from '@/components/ImageCarousel'
 import { StatusBadge } from '@/components/StatusBadge'
-import { OutreachModal } from '@/components/OutreachModal'
 import { EditListingModal } from '@/components/EditListingModal'
-import { draftInquiryEmailClient } from '@/lib/claude-client'
 import type { Listing, Amenities } from '@/types'
 
 interface ListingDetailClientProps {
   listing: Listing
+  listId: string
 }
 
-export function ListingDetailClient({ listing: initialListing }: ListingDetailClientProps) {
+export function ListingDetailClient({ listing: initialListing, listId }: ListingDetailClientProps) {
   const [listing, setListing] = useState(initialListing)
   const [notes, setNotes] = useState(listing.notes || '')
   const [savingNotes, setSavingNotes] = useState(false)
-  const [outreachModal, setOutreachModal] = useState<{ subject: string; body: string } | null>(null)
-  const [draftingEmail, setDraftingEmail] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
 
   async function saveNotes() {
@@ -31,41 +28,13 @@ export function ListingDetailClient({ listing: initialListing }: ListingDetailCl
     setSavingNotes(false)
   }
 
-  async function handleSendInquiry() {
-    setDraftingEmail(true)
-    try {
-      const draft = await draftInquiryEmailClient(listing)
-      setOutreachModal(draft)
-    } finally {
-      setDraftingEmail(false)
-    }
-  }
-
   return (
     <div className="min-h-screen bg-zinc-50">
       <div className="max-w-2xl mx-auto py-8 px-4">
         {/* Back nav */}
-        <Link href="/dashboard" className="text-sm text-blue-600 hover:underline mb-6 inline-block">
+        <Link href={`/dashboard/${listId}`} className="text-sm text-blue-600 hover:underline mb-6 inline-block">
           ← Back to dashboard
         </Link>
-
-        {/* EMAIL_DISABLED: status banners re-enable when email feature is live
-        {listing.status === 'inquiry_sent' && (
-          <div className="mb-4 rounded-lg bg-yellow-50 border border-yellow-200 p-3 text-sm text-yellow-800">
-            Inquiry sent — awaiting price reply
-            {listing.inquiry_sent_at && (
-              <span className="ml-2 text-yellow-600">
-                ({new Date(listing.inquiry_sent_at).toLocaleDateString()})
-              </span>
-            )}
-          </div>
-        )}
-        {listing.status === 'price_received' && listing.price != null && (
-          <div className="mb-4 rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-800">
-            Price confirmed: ${listing.price.toLocaleString()}/mo
-          </div>
-        )}
-        */}
 
         <ImageCarousel images={listing.images} alt={listing.title} />
 
@@ -76,6 +45,9 @@ export function ListingDetailClient({ listing: initialListing }: ListingDetailCl
               <p className="text-zinc-500 mt-0.5">{listing.address}</p>
               {listing.neighborhood && (
                 <p className="text-sm text-zinc-400">{listing.neighborhood}</p>
+              )}
+              {listing.added_by_name && (
+                <p className="text-xs text-zinc-400 mt-1">Added by {listing.added_by_name}</p>
               )}
             </div>
             <StatusBadge status={listing.status} />
@@ -207,17 +179,6 @@ export function ListingDetailClient({ listing: initialListing }: ListingDetailCl
               </svg>
               Edit details
             </button>
-            {/* EMAIL_DISABLED: Send inquiry button — re-enable when email feature is live
-            {listing.status === 'saved' && (
-              <button
-                onClick={handleSendInquiry}
-                disabled={draftingEmail}
-                className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-              >
-                {draftingEmail ? 'Drafting...' : 'Send inquiry'}
-              </button>
-            )}
-            */}
           </div>
         </div>
       </div>
@@ -229,18 +190,6 @@ export function ListingDetailClient({ listing: initialListing }: ListingDetailCl
           onClose={() => setEditOpen(false)}
         />
       )}
-
-      {/* EMAIL_DISABLED: OutreachModal — re-enable when email feature is live
-      {outreachModal && (
-        <OutreachModal
-          listingId={listing.id}
-          subject={outreachModal.subject}
-          body={outreachModal.body}
-          onClose={() => setOutreachModal(null)}
-          onSent={() => setListing(l => ({ ...l, status: 'inquiry_sent' }))}
-        />
-      )}
-      */}
     </div>
   )
 }

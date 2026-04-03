@@ -16,6 +16,8 @@ export interface Amenities {
 export interface Listing {
   id: string
   user_id: string
+  list_id: string
+  added_by_name: string | null
   url: string
   source: string
   title: string
@@ -39,10 +41,34 @@ export interface Listing {
   notes: string | null
   available_date: string | null
   amenities: Amenities | null
-  commute_minutes_transit: number | null
-  commute_minutes_walking: number | null
   created_at: string
   updated_at: string
+}
+
+export interface List {
+  id: string
+  name: string
+  created_by: string
+  invite_code: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ListMember {
+  id: string
+  list_id: string
+  user_id: string
+  display_name: string
+  role: 'owner' | 'member'
+  joined_at: string
+}
+
+export interface ListingCommute {
+  listing_id: string
+  user_id: string
+  display_name: string
+  minutes_transit: number | null
+  minutes_walking: number | null
 }
 
 export interface UserToken {
@@ -56,6 +82,7 @@ export interface UserToken {
 export interface UserPreferences {
   id: string
   user_id: string
+  display_name: string | null
   commute_address: string | null
   work_address: string | null
   work_lat: number | null
@@ -90,4 +117,3 @@ export interface ZillowUnit {
   price: number | null
   available_date: string | null
 }
-

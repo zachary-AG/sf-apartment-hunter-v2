@@ -73,6 +73,8 @@ export async function extractListingWithClaude(html: string): Promise<ParsedList
 
 For amenities: return true if explicitly mentioned as present, false if explicitly mentioned as absent, null if not mentioned at all.
 
+Return ONLY raw, valid JSON. Do not include markdown formatting, backticks, conversational text, or any other characters outside the JSON object.
+
 Text:
 ${cleaned}`,
       },
@@ -82,7 +84,7 @@ ${cleaned}`,
   const text = message.content[0].type === 'text' ? message.content[0].text : ''
   console.log(`[Claude][Extract] Raw response (first 300 chars): ${text.slice(0, 300)}`)
   // Strip markdown code fences if present (Claude sometimes wraps JSON in ```json ... ```)
-  const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '')
+  const stripped = text.replace(/^```(?:json)?\s*/gi, '').replace(/\s*```\s*$/g, '').trim()
   const jsonMatch = stripped.match(/\{[\s\S]*\}/)
   if (!jsonMatch) {
     console.log(`[Claude][Extract] No JSON found in response`)
@@ -168,6 +170,8 @@ Rules:
 - If no units section exists at all, create one entry using the main listing's beds/baths/price/sqft.
 - For amenities: true if explicitly mentioned as present, false if explicitly mentioned as absent, null if not mentioned.
 
+Return ONLY raw, valid JSON. Do not include markdown formatting, backticks, conversational text, or any other characters outside the JSON object.
+
 ${content}`,
       },
     ],
@@ -176,7 +180,7 @@ ${content}`,
   const text = message.content[0].type === 'text' ? message.content[0].text : ''
   console.log(`[Claude][Zillow] Raw response: ${text.slice(0, 400)}`)
 
-  const stripped2 = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '')
+  const stripped2 = text.replace(/^```(?:json)?\s*/gi, '').replace(/\s*```\s*$/g, '').trim()
   const jsonMatch = stripped2.match(/\{[\s\S]*\}/)
   if (!jsonMatch) return empty
 

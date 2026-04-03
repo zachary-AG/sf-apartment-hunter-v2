@@ -122,6 +122,7 @@ function AddressAutocomplete({ value, onChange, onSelect, className }: {
 }
 
 interface CompleteListingModalProps {
+  listId: string
   missingFields: ('address' | 'beds' | 'baths' | 'price')[]
   partialData: ParsedListing
   url: string
@@ -181,7 +182,22 @@ function AutoTextarea({ value, onChange, className }: {
   )
 }
 
-export function CompleteListingModal({ partialData, url, source, onSaved, onClose }: CompleteListingModalProps) {
+async function geocodeAddressString(addr: string): Promise<{ lat: number; lng: number } | null> {
+  try {
+    const res = await fetch(`/api/places/autocomplete?input=${encodeURIComponent(addr)}`)
+    const data = await res.json() as { suggestions?: Array<{ description: string; placeId: string }> }
+    const placeId = data.suggestions?.[0]?.placeId
+    if (!placeId) return null
+    const det = await fetch(`/api/places/details?placeId=${encodeURIComponent(placeId)}`)
+    const detData = await det.json() as { lat?: number | null; lng?: number | null }
+    if (detData.lat != null && detData.lng != null) return { lat: detData.lat, lng: detData.lng }
+    return null
+  } catch {
+    return null
+  }
+}
+
+export function CompleteListingModal({ listId, partialData, url, source, onSaved, onClose }: CompleteListingModalProps) {
   const [address, setAddress] = useState(partialData.address ?? '')
   const [lat, setLat] = useState<number | null>(partialData.lat ?? null)
   const [lng, setLng] = useState<number | null>(partialData.lng ?? null)
@@ -204,8 +220,21 @@ export function CompleteListingModal({ partialData, url, source, onSaved, onClos
   const [confirmEmpty, setConfirmEmpty] = useState<string[] | null>(null)
   const [confirmCancel, setConfirmCancel] = useState(false)
 
+  // Auto-geocode the pre-filled address on mount so the map preview appears immediately
+  useEffect(() => {
+    if (address && lat == null && lng == null) {
+      geocodeAddressString(address).then(coords => {
+        if (coords) {
+          setLat(coords.lat)
+          setLng(coords.lng)
+        }
+      })
+    }
+    // Only run on mount — intentionally omitting address/lat/lng from deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-  // Only show map once lat/lng are confirmed (i.e. user selected a Places autocomplete suggestion)
+
   const mapEmbedSrc = lat != null && lng != null
     ? `https://www.google.com/maps?q=${lat},${lng}&z=15&output=embed`
     : null
@@ -273,7 +302,7 @@ export function CompleteListingModal({ partialData, url, source, onSaved, onClos
       const res = await fetch('/api/ingest/save-partial', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ partialData: completed, url, source, amenityTags }),
+        body: JSON.stringify({ partialData: completed, url, source, amenityTags, list_id: listId }),
       })
       const data = await res.json() as { listing?: Listing; emailDraft?: { subject: string; body: string }; error?: string }
       if (!res.ok) throw new Error(data.error || 'Failed to save listing')

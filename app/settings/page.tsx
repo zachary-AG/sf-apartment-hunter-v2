@@ -16,6 +16,7 @@ export default async function SettingsPage() {
   return (
     <SettingsClient
       gmailEmail={tokenRow?.gmail_email ?? null}
+      displayName={prefs?.display_name ?? null}
       commuteAddress={prefs?.commute_address ?? null}
       workAddress={prefs?.work_address ?? null}
       workLat={prefs?.work_lat ?? null}

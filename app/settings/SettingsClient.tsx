@@ -11,6 +11,7 @@ interface Suggestion {
 
 interface SettingsClientProps {
   gmailEmail: string | null
+  displayName: string | null
   commuteAddress: string | null
   workAddress: string | null
   workLat: number | null
@@ -20,12 +21,17 @@ interface SettingsClientProps {
 
 export function SettingsClient({
   gmailEmail,
+  displayName: initialDisplayName,
   commuteAddress: initialCommute,
   workAddress: initialWorkAddress,
   workLat: initialWorkLat,
   workLng: initialWorkLng,
   commuteMode: initialCommuteMode,
 }: SettingsClientProps) {
+  const [displayName, setDisplayName] = useState(initialDisplayName || '')
+  const [displayNameSaving, setDisplayNameSaving] = useState(false)
+  const [displayNameSaved, setDisplayNameSaved] = useState(false)
+  const [displayNameError, setDisplayNameError] = useState<string | null>(null)
   const [commuteAddress, setCommuteAddress] = useState(initialCommute || '')
   const [workAddress, setWorkAddress] = useState(initialWorkAddress || '')
   const [workLat, setWorkLat] = useState<number | null>(initialWorkLat)
@@ -35,15 +41,39 @@ export function SettingsClient({
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
-  // Places autocomplete state
+  // Work address autocomplete state
   const [workSuggestions, setWorkSuggestions] = useState<Suggestion[]>([])
   const [showWorkSuggestions, setShowWorkSuggestions] = useState(false)
   const workDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
 
+  async function saveDisplayName() {
+    const trimmed = displayName.trim()
+    if (!trimmed) return
+    setDisplayNameSaving(true)
+    setDisplayNameSaved(false)
+    setDisplayNameError(null)
+    try {
+      const res = await fetch('/api/preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: trimmed }),
+      })
+      if (!res.ok) {
+        const data = await res.json() as { error?: string }
+        setDisplayNameError(data.error ?? 'Save failed')
+      } else {
+        setDisplayNameSaved(true)
+        setTimeout(() => setDisplayNameSaved(false), 3000)
+      }
+    } catch {
+      setDisplayNameError('Network error — try again')
+    }
+    setDisplayNameSaving(false)
+  }
+
   function handleWorkAddressChange(value: string) {
     setWorkAddress(value)
-    // Clear confirmed coords when address text changes
     setWorkLat(null)
     setWorkLng(null)
 
@@ -68,21 +98,17 @@ export function SettingsClient({
   async function selectWorkSuggestion(suggestion: Suggestion) {
     setShowWorkSuggestions(false)
     setWorkSuggestions([])
-
     let lat: number | null = null
     let lng: number | null = null
-
     try {
       const res = await fetch(`/api/places/details?placeId=${encodeURIComponent(suggestion.placeId)}`)
       const data = await res.json() as { address?: string; lat?: number; lng?: number }
-      // Prefer the formatted address from Places Details
       const finalAddress = data.address || suggestion.description
       setWorkAddress(finalAddress)
       lat = data.lat ?? null
       lng = data.lng ?? null
       setWorkLat(lat)
       setWorkLng(lng)
-      // Auto-save immediately after selecting a place
       await doSave(finalAddress, lat, lng, commuteMode)
     } catch {
       setWorkAddress(suggestion.description)
@@ -102,9 +128,9 @@ export function SettingsClient({
   }, [])
 
   async function doSave(
-    addressToSave: string,
-    latToSave: number | null,
-    lngToSave: number | null,
+    addr1: string,
+    lat1: number | null,
+    lng1: number | null,
     modeToSave: string
   ) {
     setSaving(true)
@@ -117,9 +143,9 @@ export function SettingsClient({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           commute_address: commuteAddress,
-          work_address: addressToSave || null,
-          work_lat: latToSave,
-          work_lng: lngToSave,
+          work_address: addr1 || null,
+          work_lat: lat1,
+          work_lng: lng1,
           commute_mode: modeToSave,
         }),
       })
@@ -156,6 +182,38 @@ export function SettingsClient({
         </div>
 
         <div className="space-y-6">
+          {/* Display Name */}
+          <div className="bg-white rounded-lg border border-zinc-200 p-5">
+            <h2 className="text-sm font-semibold text-zinc-900 mb-1">Display Name</h2>
+            <p className="text-sm text-zinc-500 mb-4">
+              Shown to collaborators on shared lists and on listing attributions.
+            </p>
+            <label className="block text-xs font-medium text-zinc-600 mb-1">Your name</label>
+            <input
+              type="text"
+              value={displayName}
+              onChange={e => setDisplayName(e.target.value)}
+              placeholder="e.g. Alex Johnson"
+              maxLength={60}
+              className="w-full border border-zinc-200 rounded px-3 py-2 text-sm text-zinc-600 mb-4"
+            />
+            <div className="flex items-center gap-3">
+              <button
+                onClick={saveDisplayName}
+                disabled={displayNameSaving || !displayName.trim()}
+                className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
+              >
+                {displayNameSaving ? 'Saving...' : 'Save'}
+              </button>
+              {displayNameSaved && (
+                <span className="text-sm text-green-600 font-medium">✓ Saved</span>
+              )}
+              {displayNameError && (
+                <span className="text-sm text-red-600">{displayNameError}</span>
+              )}
+            </div>
+          </div>
+
           {/* EMAIL_DISABLED: Gmail Connection — re-enable when email feature is live
           <div className="bg-white rounded-lg border border-zinc-200 p-5">
             <h2 className="text-sm font-semibold text-zinc-900 mb-3">Gmail Connection</h2>
@@ -188,19 +246,17 @@ export function SettingsClient({
           <div className="bg-white rounded-lg border border-zinc-200 p-5">
             <h2 className="text-sm font-semibold text-zinc-900 mb-1">Commute Settings</h2>
             <p className="text-sm text-zinc-500 mb-4">
-              Set your work address to see commute times on listing cards and the map.
+              Set work addresses to see commute times on listing cards and the map.
             </p>
 
-            {/* Currently saved address indicator */}
+            {/* Office 1 */}
             {initialWorkAddress && (
               <div className="mb-3 flex items-center gap-1.5 text-xs text-zinc-500">
                 <span className="text-green-600">✓</span>
                 <span>Currently saved: <span className="font-medium text-zinc-700">{initialWorkAddress}</span></span>
               </div>
             )}
-
-            {/* Work Address with Places Autocomplete */}
-            <label className="block text-xs font-medium text-zinc-600 mb-1">Work Address</label>
+            <label className="block text-xs font-medium text-zinc-600 mb-1">Your Work Address</label>
             <div className="relative mb-4" ref={wrapperRef}>
               <input
                 type="text"

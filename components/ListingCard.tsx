@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { StatusBadge } from './StatusBadge'
-import type { Listing } from '@/types'
+import type { Listing, ListingCommute } from '@/types'
 
 const AMENITY_LABELS: Record<string, string> = {
   in_unit_laundry: 'W/D in unit',
@@ -21,11 +21,15 @@ const AMENITY_LABELS: Record<string, string> = {
 
 interface ListingCardProps {
   listing: Listing
+  commutes: ListingCommute[]
+  listId: string
   onDelete: (id: string) => void
   onHover?: (id: string | null) => void
 }
 
-export function ListingCard({ listing, onDelete, onHover }: ListingCardProps) {
+const COMMUTE_COLORS = ['#3b82f6', '#f97316', '#10b981', '#8b5cf6', '#ef4444', '#06b6d4']
+
+export function ListingCard({ listing, commutes, listId, onDelete, onHover }: ListingCardProps) {
   const [confirming, setConfirming] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [imgIndex, setImgIndex] = useState(0)
@@ -70,7 +74,6 @@ export function ListingCard({ listing, onDelete, onHover }: ListingCardProps) {
   const displayTitle = listing.title || listing.address
   const showAddress = listing.title && listing.address && listing.title !== listing.address
 
-  // Build detail grid cells — only non-null values
   const detailCells: { label: string; value: string }[] = []
   if (priceText) detailCells.push({ label: 'Price', value: priceText })
   if (listing.beds != null || listing.baths != null) {
@@ -87,7 +90,7 @@ export function ListingCard({ listing, onDelete, onHover }: ListingCardProps) {
       onMouseEnter={() => onHover?.(listing.id)}
       onMouseLeave={() => onHover?.(null)}
     >
-      {/* Delete button — top-right */}
+      {/* Delete button */}
       <button
         onClick={e => { e.preventDefault(); e.stopPropagation(); setConfirming(true) }}
         className="absolute top-2 right-2 z-10 text-zinc-200 hover:text-red-400 transition-colors p-1 opacity-0 group-hover:opacity-100"
@@ -96,8 +99,8 @@ export function ListingCard({ listing, onDelete, onHover }: ListingCardProps) {
         <TrashIcon />
       </button>
 
-      <Link href={`/dashboard/${listing.id}`} className="flex min-w-0">
-        {/* Image — 35% width */}
+      <Link href={`/dashboard/${listId}/${listing.id}`} className="flex min-w-0">
+        {/* Image */}
         <div
           className="relative flex-shrink-0 bg-zinc-100 overflow-hidden self-stretch"
           style={{ width: '35%' }}
@@ -115,18 +118,10 @@ export function ListingCard({ listing, onDelete, onHover }: ListingCardProps) {
               />
               {hasMultiple && imgHovered && (
                 <>
-                  <button
-                    onClick={prev}
-                    className="absolute left-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
-                    aria-label="Previous image"
-                  >
+                  <button onClick={prev} className="absolute left-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors" aria-label="Previous image">
                     <ChevronLeft size={9} />
                   </button>
-                  <button
-                    onClick={next}
-                    className="absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
-                    aria-label="Next image"
-                  >
+                  <button onClick={next} className="absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors" aria-label="Next image">
                     <ChevronRight size={9} />
                   </button>
                   <div className="absolute bottom-1 right-1 text-white text-[9px] font-medium bg-black/50 rounded px-1 leading-4">
@@ -148,11 +143,14 @@ export function ListingCard({ listing, onDelete, onHover }: ListingCardProps) {
 
         {/* Content */}
         <div className="flex-1 min-w-0 px-3 py-2.5 pr-7 flex flex-col justify-between">
-          {/* Title + address */}
+          {/* Title + address + attribution */}
           <div className="min-w-0 mb-2">
             <p className="text-[13px] font-semibold text-zinc-900 truncate leading-snug">{displayTitle}</p>
             {showAddress && (
               <p className="text-[11px] text-zinc-400 truncate mt-0.5 leading-snug">{listing.address}</p>
+            )}
+            {listing.added_by_name && (
+              <p className="text-[10px] text-zinc-400 mt-0.5">Added by {listing.added_by_name}</p>
             )}
           </div>
 
@@ -174,15 +172,25 @@ export function ListingCard({ listing, onDelete, onHover }: ListingCardProps) {
             </div>
           )}
 
-          {/* Commute */}
-          {(listing.commute_minutes_transit != null || listing.commute_minutes_walking != null) && (
-            <div className="mb-1.5 flex items-center gap-3">
-              {listing.commute_minutes_transit != null && (
-                <span className="text-[12px] text-zinc-600">🚇 {listing.commute_minutes_transit} min</span>
-              )}
-              {listing.commute_minutes_walking != null && (
-                <span className="text-[12px] text-zinc-600">🚶 {listing.commute_minutes_walking} min</span>
-              )}
+          {/* Commute — per-member rows */}
+          {commutes.length > 0 && (
+            <div className="mb-1.5 flex flex-col gap-0.5">
+              {commutes.map((c, i) => {
+                if (c.minutes_transit == null && c.minutes_walking == null) return null
+                const color = COMMUTE_COLORS[i % COMMUTE_COLORS.length]
+                return (
+                  <div key={c.user_id} className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                    <span className="text-[10px] font-medium text-zinc-500 truncate max-w-[60px]">{c.display_name}</span>
+                    {c.minutes_transit != null && (
+                      <span className="text-[11px] text-zinc-600">🚇 {c.minutes_transit}m</span>
+                    )}
+                    {c.minutes_walking != null && (
+                      <span className="text-[11px] text-zinc-600">🚶 {c.minutes_walking}m</span>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
 
@@ -211,17 +219,10 @@ export function ListingCard({ listing, onDelete, onHover }: ListingCardProps) {
               Are you sure you want to delete this listing? This cannot be undone.
             </p>
             <div className="flex gap-3">
-              <button
-                onClick={handleDelete}
-                disabled={deleting}
-                className="flex-1 bg-red-600 text-white rounded px-3 py-2 text-sm font-medium hover:bg-red-700 disabled:opacity-50"
-              >
+              <button onClick={handleDelete} disabled={deleting} className="flex-1 bg-red-600 text-white rounded px-3 py-2 text-sm font-medium hover:bg-red-700 disabled:opacity-50">
                 {deleting ? 'Deleting...' : 'Delete'}
               </button>
-              <button
-                onClick={() => setConfirming(false)}
-                className="flex-1 border border-zinc-200 rounded px-3 py-2 text-sm text-zinc-600 hover:bg-zinc-50"
-              >
+              <button onClick={() => setConfirming(false)} className="flex-1 border border-zinc-200 rounded px-3 py-2 text-sm text-zinc-600 hover:bg-zinc-50">
                 Cancel
               </button>
             </div>

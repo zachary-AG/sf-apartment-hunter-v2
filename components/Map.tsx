@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { GoogleMap, Marker, InfoWindow, useLoadScript } from '@react-google-maps/api'
 import Image from 'next/image'
 import type { Listing } from '@/types'
+import { GOOGLE_MAPS_LIBRARIES } from '@/lib/maps'
 
 // Stable callback ref hook — avoids adding callbacks to useEffect deps
 function useCallbackRef<T extends (...args: never[]) => unknown>(fn: T | undefined) {
@@ -15,7 +16,7 @@ function useCallbackRef<T extends (...args: never[]) => unknown>(fn: T | undefin
 }
 
 const SF_CENTER = { lat: 37.7749, lng: -122.4194 }
-const LIBRARIES: ('visualization')[] = ['visualization']
+const LIBRARIES = GOOGLE_MAPS_LIBRARIES
 
 function heatmapRadiusForZoom(zoom: number): number {
   if (zoom <= 11) return 15
@@ -39,14 +40,15 @@ function pinIcon(color: string, scale: number): google.maps.Icon {
   }
 }
 
-function workPinIcon(): google.maps.Icon {
+
+function coloredWorkPinIcon(color: string): google.maps.Icon {
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="28" height="40" viewBox="0 0 28 40">
-      <path d="M14 0C6.27 0 0 6.27 0 14c0 10.5 14 26 14 26S28 24.5 28 14C28 6.27 21.73 0 14 0z" fill="#0ea5e9"/>
+      <path d="M14 0C6.27 0 0 6.27 0 14c0 10.5 14 26 14 26S28 24.5 28 14C28 6.27 21.73 0 14 0z" fill="${color}"/>
       <rect x="7" y="14" width="14" height="10" rx="1.5" fill="white"/>
       <rect x="9" y="10" width="10" height="4" rx="1" fill="white" opacity="0.8"/>
-      <rect x="10" y="11" width="8" height="3" rx="1" fill="#0ea5e9"/>
-      <rect x="12" y="17" width="4" height="4" rx="0.5" fill="#0ea5e9"/>
+      <rect x="10" y="11" width="8" height="3" rx="1" fill="${color}"/>
+      <rect x="12" y="17" width="4" height="4" rx="0.5" fill="${color}"/>
     </svg>`.trim()
   return {
     url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
@@ -55,20 +57,30 @@ function workPinIcon(): google.maps.Icon {
   }
 }
 
+interface WorkLocation {
+  lat: number
+  lng: number
+  displayName: string
+  color: string
+}
+
 interface MapProps {
   listings: Listing[]
   showCrime?: boolean
   hoveredListingId?: string | null
-  workLocation?: { lat: number; lng: number } | null
+  workLocations?: WorkLocation[]
   onCrimeLoadingChange?: (loading: boolean) => void
   onCrimeError?: () => void
 }
 
-export function Map({ listings, showCrime = false, hoveredListingId, workLocation, onCrimeLoadingChange, onCrimeError }: MapProps) {
+export function Map({ listings, showCrime = false, hoveredListingId, workLocations = [], onCrimeLoadingChange, onCrimeError }: MapProps) {
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null)
   const [popupImgIndex, setPopupImgIndex] = useState(0)
   const mapRef = useRef<google.maps.Map | null>(null)
   const heatmapRef = useRef<google.maps.visualization.HeatmapLayer | null>(null)
+  const searchMarkersRef = useRef<google.maps.Marker[]>([])
+  const searchInfoWindowRef = useRef<google.maps.InfoWindow | null>(null)
+  const searchInputInjectedRef = useRef(false)
   const onCrimeLoadingChangeRef = useCallbackRef(onCrimeLoadingChange)
   const onCrimeErrorRef = useCallbackRef(onCrimeError)
 
@@ -77,14 +89,140 @@ export function Map({ listings, showCrime = false, hoveredListingId, workLocatio
     libraries: LIBRARIES,
   })
 
+  // Build a custom SVG icon: green dot with the place name as a permanent label below it.
+  function searchMarkerIcon(name: string): google.maps.Icon {
+    const DOT_R = 8
+    const MAX_W = 160
+    const CH_W = 7
+    const maxChars = Math.floor(MAX_W / CH_W)
+    const label = name.length > maxChars ? name.slice(0, maxChars - 1) + '…' : name
+    const textWidth = label.length * CH_W
+    const W = Math.min(Math.max(textWidth + 8, DOT_R * 2 + 4), MAX_W)
+    const H = DOT_R * 2 + 18
+    const DOT_CX = W / 2
+
+    const svg = [
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">`,
+      `<circle cx="${DOT_CX}" cy="${DOT_R}" r="${DOT_R}" fill="#16a34a" stroke="#fff" stroke-width="2"/>`,
+      `<text x="${DOT_CX}" y="${H - 2}" text-anchor="middle"`,
+      ` font-family="Arial,sans-serif" font-size="12" fill="#fff"`,
+      ` stroke="#fff" stroke-width="3" stroke-linejoin="round" paint-order="stroke"`,
+      `>${label}</text>`,
+      `<text x="${DOT_CX}" y="${H - 2}" text-anchor="middle"`,
+      ` font-family="Arial,sans-serif" font-size="12" fill="#1a1a1a"`,
+      `>${label}</text>`,
+      '</svg>',
+    ].join('')
+
+    return {
+      url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+      scaledSize: new google.maps.Size(W, H),
+      anchor: new google.maps.Point(DOT_CX, DOT_R),
+    }
+  }
+
+  function clearSearchMarkers() {
+    searchMarkersRef.current.forEach(m => m.setMap(null))
+    searchMarkersRef.current = []
+    searchInfoWindowRef.current?.close()
+  }
+
+  async function runPlacesSearch(map: google.maps.Map, query: string) {
+    const { Place } = await window.google.maps.importLibrary('places') as google.maps.PlacesLibrary
+    const bounds = map.getBounds()
+
+    const { places } = await Place.searchByText({
+      textQuery: query,
+      fields: ['displayName', 'location', 'formattedAddress'],
+      locationRestriction: bounds ?? undefined,
+    })
+
+    clearSearchMarkers()
+
+    if (!searchInfoWindowRef.current) {
+      searchInfoWindowRef.current = new window.google.maps.InfoWindow()
+    }
+    const infoWindow = searchInfoWindowRef.current
+
+    for (const place of places) {
+      if (!place.location) continue
+      const name = place.displayName ?? ''
+      const address = place.formattedAddress ?? ''
+      const marker = new window.google.maps.Marker({
+        map,
+        position: place.location,
+        icon: searchMarkerIcon(name),
+      })
+
+      marker.addListener('click', () => {
+        const mapsUrl = 'https://www.google.com/maps/search/?api=1&query=' +
+          encodeURIComponent(name + ' ' + address)
+        infoWindow.setContent(
+          '<div style="color:#000;font-family:Arial,sans-serif;font-size:13px;max-width:220px">' +
+            '<strong>' + name + '</strong>' +
+            (address ? '<br><span style="color:#555;font-size:12px">' + address + '</span>' : '') +
+            '<br><a href="' + mapsUrl + '" target="_blank" rel="noopener noreferrer" ' +
+              'style="color:#1a73e8;font-size:12px">View on Google Maps</a>' +
+          '</div>'
+        )
+        infoWindow.open(map, marker)
+      })
+
+      searchMarkersRef.current.push(marker)
+    }
+  }
+
   const onMapLoad = useCallback((map: google.maps.Map) => {
     mapRef.current = map
+
     map.addListener('zoom_changed', () => {
       if (heatmapRef.current) {
         const zoom = map.getZoom() ?? 13
         heatmapRef.current.set('radius', heatmapRadiusForZoom(zoom))
       }
     })
+
+    // Inject search input into native map controls (TOP_LEFT) — only once
+    if (searchInputInjectedRef.current) return
+    searchInputInjectedRef.current = true
+
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.placeholder = 'Search nearby (e.g. grocery)'
+    input.autocomplete = 'off'
+    input.style.cssText = [
+      'margin:10px',
+      'padding:8px 12px',
+      'width:220px',
+      'font-size:13px',
+      'font-family:Arial,sans-serif',
+      'color:#1a1a1a',
+      'background:#fff',
+      'border:1px solid rgba(0,0,0,0.18)',
+      'border-radius:8px',
+      'box-shadow:0 2px 6px rgba(0,0,0,0.15)',
+      'outline:none',
+    ].join(';')
+
+    input.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        const q = input.value.trim()
+        if (q) runPlacesSearch(map, q).catch(err => console.error('[Map] Places search failed:', err))
+      }
+    })
+
+    input.addEventListener('input', () => {
+      if (input.value.trim() === '') clearSearchMarkers()
+    })
+
+    // Prevent map drag/zoom events from firing when interacting with the input
+    window.google.maps.event.addDomListener(input, 'keydown', (e: Event) => {
+      e.stopPropagation()
+    })
+
+    map.controls[window.google.maps.ControlPosition.TOP_LEFT].push(input)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -175,14 +313,16 @@ export function Map({ listings, showCrime = false, hoveredListingId, workLocatio
             )
           })}
 
-        {workLocation && (
+        {workLocations.map((wl) => (
           <Marker
-            position={workLocation}
-            icon={workPinIcon()}
+            key={`work-${wl.displayName}`}
+            position={{ lat: wl.lat, lng: wl.lng }}
+            icon={coloredWorkPinIcon(wl.color)}
             zIndex={20}
+            title={`${wl.displayName}'s office`}
             clickable={false}
           />
-        )}
+        ))}
 
         {selectedListing && selectedListing.lat != null && selectedListing.lng != null && (
           <InfoWindow
@@ -245,12 +385,9 @@ export function Map({ listings, showCrime = false, hoveredListingId, workLocatio
                   {selectedListing.baths != null && ` ${selectedListing.baths}ba`}
                 </p>
               )}
-              <a
-                href={`/dashboard/${selectedListing.id}`}
-                className="inline-block mt-2 text-blue-600 font-medium hover:underline"
-              >
-                View details →
-              </a>
+              {selectedListing.added_by_name && (
+                <p className="text-zinc-400 text-xs mt-1">Added by {selectedListing.added_by_name}</p>
+              )}
             </div>
           </InfoWindow>
         )}

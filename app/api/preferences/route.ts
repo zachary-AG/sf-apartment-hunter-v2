@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
-import { recalculateAllCommutes } from '@/lib/commute'
+import { recalculateUserCommutesAcrossLists } from '@/lib/commute'
 import { geocodeAddress } from '@/lib/geocode'
 
 export async function GET() {
@@ -23,6 +23,7 @@ export async function PUT(req: NextRequest) {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json() as {
+    display_name?: string
     commute_address?: string
     work_address?: string
     work_lat?: number | null
@@ -32,51 +33,67 @@ export async function PUT(req: NextRequest) {
 
   const supabase = createServerSupabaseClient()
 
-  // Fetch current prefs to detect work location change
+  // Fetch current prefs to detect work location changes
   const { data: existing } = await supabase
     .from('user_preferences')
     .select('work_lat, work_lng, commute_mode')
     .eq('user_id', userId)
     .maybeSingle()
 
-  // Resolve lat/lng: use provided coords, or geocode the address, or fall back to existing coords
+  // Resolve lat/lng
   let resolvedLat: number | null = body.work_lat ?? null
   let resolvedLng: number | null = body.work_lng ?? null
-
   if ((resolvedLat == null || resolvedLng == null) && body.work_address) {
-    // No coords provided but address given — geocode server-side
     const coords = await geocodeAddress(body.work_address)
-    if (coords) {
-      resolvedLat = coords.lat
-      resolvedLng = coords.lng
-    }
+    if (coords) { resolvedLat = coords.lat; resolvedLng = coords.lng }
+  }
+
+  const upsertPayload: Record<string, unknown> = {
+    user_id: userId,
+    commute_address: body.commute_address ?? null,
+    work_address: body.work_address ?? null,
+    work_lat: resolvedLat,
+    work_lng: resolvedLng,
+    commute_mode: body.commute_mode ?? 'transit',
+  }
+  if (body.display_name !== undefined) {
+    upsertPayload.display_name = body.display_name.trim() || null
   }
 
   const { data, error } = await supabase
     .from('user_preferences')
-    .upsert({
-      user_id: userId,
-      commute_address: body.commute_address ?? null,
-      work_address: body.work_address ?? null,
-      work_lat: resolvedLat,
-      work_lng: resolvedLng,
-      commute_mode: body.commute_mode ?? 'transit',
-    }, { onConflict: 'user_id' })
+    .upsert(upsertPayload, { onConflict: 'user_id' })
     .select()
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+  // If display name changed, retroactively update list_members and listing_commutes
+  if (body.display_name !== undefined) {
+    const newName = body.display_name.trim() || null
+    if (newName) {
+      await Promise.all([
+        supabase
+          .from('list_members')
+          .update({ display_name: newName })
+          .eq('user_id', userId),
+        supabase
+          .from('listing_commutes')
+          .update({ display_name: newName })
+          .eq('user_id', userId),
+      ])
+    }
+  }
+
   // Recalculate commutes if work location changed
-  const workLocationChanged =
-    resolvedLat != null &&
-    resolvedLng != null &&
+  const workChanged =
+    resolvedLat != null && resolvedLng != null &&
     (existing?.work_lat !== resolvedLat || existing?.work_lng !== resolvedLng)
 
-  if (workLocationChanged) {
-    // Fire and forget — don't block the response
-    recalculateAllCommutes(userId, resolvedLat!, resolvedLng!, supabase)
-      .catch(err => console.error('[Preferences] recalculateAllCommutes failed:', err))
+  if (workChanged) {
+    const displayName = (data as { display_name?: string | null }).display_name || userId
+    recalculateUserCommutesAcrossLists(userId, displayName, resolvedLat!, resolvedLng!, supabase)
+      .catch(err => console.error('[Preferences] recalculateUserCommutesAcrossLists failed:', err))
   }
 
   return NextResponse.json({ preferences: data })

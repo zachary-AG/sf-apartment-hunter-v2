@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { geocodeAddress } from '@/lib/geocode'
-import { calculateCommuteBothModes } from '@/lib/commute'
+import { calculateCommutesForListing } from '@/lib/commute'
+import { assertListMemberForListing } from '@/lib/list-auth'
 import { createServerSupabaseClient } from '@/lib/supabase'
+import type { ListingCommute } from '@/types'
 
 export async function POST(req: NextRequest) {
   const { userId } = await auth()
@@ -13,30 +15,39 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'listing_id and address are required' }, { status: 400 })
   }
 
-  const coords = await geocodeAddress(address)
-  if (!coords) {
-    return NextResponse.json({ lat: null, lng: null })
-  }
-
   const supabase = createServerSupabaseClient()
 
-  // Fetch user work address for commute calculation
-  const { data: prefs } = await supabase
-    .from('user_preferences')
-    .select('work_lat, work_lng')
-    .eq('user_id', userId)
-    .maybeSingle()
-
-  let commuteTimes = { commute_minutes_transit: null as number | null, commute_minutes_walking: null as number | null }
-  if (prefs?.work_lat && prefs?.work_lng) {
-    commuteTimes = await calculateCommuteBothModes(prefs.work_lat, prefs.work_lng, coords.lat, coords.lng)
+  // Verify list membership
+  let listId: string
+  try {
+    listId = await assertListMemberForListing(listing_id, userId, supabase)
+  } catch {
+    return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
   }
 
+  const coords = await geocodeAddress(address)
+  if (!coords) {
+    return NextResponse.json({ lat: null, lng: null, commutes: [] })
+  }
+
+  // Update listing coordinates
   await supabase
     .from('listings')
-    .update({ lat: coords.lat, lng: coords.lng, ...commuteTimes })
+    .update({ lat: coords.lat, lng: coords.lng })
     .eq('id', listing_id)
-    .eq('user_id', userId)
 
-  return NextResponse.json({ ...coords, ...commuteTimes })
+  // Calculate commutes for all list members
+  let commutes: ListingCommute[] = []
+  try {
+    await calculateCommutesForListing(listing_id, coords.lat, coords.lng, listId, supabase)
+    const { data } = await supabase
+      .from('listing_commutes')
+      .select('listing_id, user_id, display_name, minutes_transit, minutes_walking')
+      .eq('listing_id', listing_id)
+    commutes = (data ?? []) as ListingCommute[]
+  } catch (err) {
+    console.error('[Geocode] commute calculation failed:', err)
+  }
+
+  return NextResponse.json({ ...coords, commutes })
 }
