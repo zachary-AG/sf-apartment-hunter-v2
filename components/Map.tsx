@@ -388,6 +388,14 @@ export function Map({ listings, showCrime = false, hoveredListingId, workLocatio
               {selectedListing.added_by_name && (
                 <p className="text-zinc-400 text-xs mt-1">Added by {selectedListing.added_by_name}</p>
               )}
+              <a
+                href={selectedListing.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block mt-2 text-[11px] font-medium text-blue-600 hover:text-blue-800 hover:underline"
+              >
+                View original listing ↗
+              </a>
             </div>
           </InfoWindow>
         )}
