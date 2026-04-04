@@ -26,7 +26,7 @@ export async function PATCH(req: NextRequest, { params }: Props) {
     'notes', 'status',
     'title', 'address', 'lat', 'lng',
     'price', 'beds', 'baths', 'sqft',
-    'description', 'available_date', 'amenities',
+    'description', 'available_date', 'amenities', 'images',
   ]
   const updates: Record<string, unknown> = {}
   for (const field of allowedFields) {

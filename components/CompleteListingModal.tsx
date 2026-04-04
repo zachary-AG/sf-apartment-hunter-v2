@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import type { Listing, ParsedListing, Amenities } from '@/types'
+import type { Listing, ParsedListing, Amenities, ListingCommute } from '@/types'
 
 interface Suggestion {
   text: string
@@ -127,7 +127,7 @@ interface CompleteListingModalProps {
   partialData: ParsedListing
   url: string
   source: string
-  onSaved: (listing: Listing, emailDraft?: { subject: string; body: string }) => void
+  onSaved: (listing: Listing, commutes?: ListingCommute[], emailDraft?: { subject: string; body: string }) => void
   onClose: () => void
 }
 
@@ -304,9 +304,9 @@ export function CompleteListingModal({ listId, partialData, url, source, onSaved
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ partialData: completed, url, source, amenityTags, list_id: listId }),
       })
-      const data = await res.json() as { listing?: Listing; emailDraft?: { subject: string; body: string }; error?: string }
+      const data = await res.json() as { listing?: Listing; commutes?: ListingCommute[]; emailDraft?: { subject: string; body: string }; error?: string }
       if (!res.ok) throw new Error(data.error || 'Failed to save listing')
-      onSaved(data.listing!, data.emailDraft)
+      onSaved(data.listing!, data.commutes, data.emailDraft)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save')
     } finally {

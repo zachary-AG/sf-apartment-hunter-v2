@@ -570,8 +570,8 @@ export function AddListingModal({ listId, onClose, onAdded }: AddListingModalPro
         partialData={incomplete.partialData}
         url={incomplete.url}
         source={incomplete.source}
-        onSaved={(listing, draft) => {
-          onAdded(listing)
+        onSaved={(listing, commutes, draft) => {
+          onAdded(listing, commutes)
           if (draft) {
             setIncomplete(null)
             setEmailDraft({ ...draft, listingId: listing.id })

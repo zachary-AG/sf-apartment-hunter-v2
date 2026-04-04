@@ -1,7 +1,129 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import Image from 'next/image'
 import type { Listing, Amenities } from '@/types'
+
+// ─── Image editing ────────────────────────────────────────────────────────────
+
+interface PendingImage {
+  /** Stable key for React — object URL for new uploads, src URL for existing */
+  key: string
+  /** Display src — object URL for new files, original URL for existing */
+  src: string
+  /** Final URL to save. null while uploading. */
+  url: string | null
+  uploading: boolean
+  error: string | null
+}
+
+async function uploadNewImage(
+  file: File,
+  key: string,
+  setImages: React.Dispatch<React.SetStateAction<PendingImage[]>>
+) {
+  const formData = new FormData()
+  formData.append('file', file)
+  try {
+    const res = await fetch('/api/listings/upload-image', { method: 'POST', body: formData })
+    const data = await res.json() as { url?: string; error?: string }
+    if (!res.ok || !data.url) throw new Error(data.error || 'Upload failed')
+    setImages(prev => prev.map(img => img.key === key ? { ...img, uploading: false, url: data.url! } : img))
+  } catch (err) {
+    setImages(prev => prev.map(img => img.key === key ? { ...img, uploading: false, error: err instanceof Error ? err.message : 'Upload failed' } : img))
+  }
+}
+
+function ImageEditor({ images, setImages }: {
+  images: PendingImage[]
+  setImages: React.Dispatch<React.SetStateAction<PendingImage[]>>
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [dragging, setDragging] = useState(false)
+
+  const addFiles = useCallback((files: FileList | null) => {
+    if (!files || files.length === 0) return
+    const incoming = Array.from(files).filter(f => f.type.startsWith('image/'))
+    if (!incoming.length) return
+    const newImages: PendingImage[] = incoming.map(f => ({
+      key: URL.createObjectURL(f),
+      src: URL.createObjectURL(f),
+      url: null,
+      uploading: true,
+      error: null,
+    }))
+    setImages(prev => [...prev, ...newImages])
+    newImages.forEach(img => uploadNewImage(incoming[newImages.indexOf(img)], img.key, setImages))
+  }, [setImages])
+
+  function remove(key: string) {
+    setImages(prev => {
+      const img = prev.find(i => i.key === key)
+      // Revoke object URLs for new uploads to free memory
+      if (img && img.key.startsWith('blob:')) URL.revokeObjectURL(img.key)
+      return prev.filter(i => i.key !== key)
+    })
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setDragging(false)
+    addFiles(e.dataTransfer.files)
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Existing + pending thumbnails */}
+      {images.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {images.map(img => (
+            <div key={img.key} className="relative w-20 h-20 rounded-lg overflow-hidden border border-zinc-200 flex-shrink-0 group">
+              <Image src={img.src} alt="" fill className="object-cover" unoptimized />
+              {img.uploading && (
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                  <svg className="animate-spin w-4 h-4 text-white" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                  </svg>
+                </div>
+              )}
+              {img.error && (
+                <div className="absolute inset-0 bg-red-500/60 flex items-center justify-center">
+                  <span className="text-white text-xs font-bold px-1 text-center leading-tight">{img.error}</span>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => remove(img.key)}
+                className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/60 text-white text-xs flex items-center justify-center hover:bg-black/80 leading-none opacity-0 group-hover:opacity-100 transition-opacity"
+                aria-label="Remove image"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Drop zone */}
+      <div
+        onClick={() => inputRef.current?.click()}
+        onDragOver={e => { e.preventDefault(); setDragging(true) }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={handleDrop}
+        className={`border-2 border-dashed rounded-lg px-4 py-4 text-center cursor-pointer transition-colors
+          ${dragging ? 'border-blue-400 bg-blue-50' : 'border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50'}`}
+      >
+        <p className="text-sm text-zinc-500">
+          Drag & drop images, or <span className="text-blue-600 font-medium">browse</span>
+        </p>
+        <p className="text-xs text-zinc-400 mt-0.5">JPG, PNG, WEBP, etc.</p>
+        <input ref={inputRef} type="file" accept="image/*" multiple className="hidden"
+          onChange={e => addFiles(e.target.files)} />
+      </div>
+    </div>
+  )
+}
 
 interface Suggestion {
   text: string
@@ -180,6 +302,9 @@ export function EditListingModal({ listing, onSaved, onClose }: EditListingModal
   const [availableDate, setAvailableDate] = useState(listing.available_date ?? '')
   const [amenityTags, setAmenityTags] = useState<string[]>(() => amenityTagsFromListing(listing.amenities))
   const [amenityInput, setAmenityInput] = useState('')
+  const [images, setImages] = useState<PendingImage[]>(() =>
+    (listing.images ?? []).map(url => ({ key: url, src: url, url, uploading: false, error: null }))
+  )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -198,9 +323,14 @@ export function EditListingModal({ listing, onSaved, onClose }: EditListingModal
   }
 
   async function handleSave() {
+    if (images.some(img => img.uploading)) {
+      setError('Please wait for all images to finish uploading.')
+      return
+    }
     setSaving(true)
     setError(null)
     const title = buildingName.trim() || address.trim()
+    const finalImages = images.filter(img => img.url).map(img => img.url!)
     try {
       const res = await fetch(`/api/listings/${listing.id}`, {
         method: 'PATCH',
@@ -217,6 +347,7 @@ export function EditListingModal({ listing, onSaved, onClose }: EditListingModal
           sqft: sqft ? Number(sqft) : null,
           available_date: availableDate || null,
           amenities: tagsToAmenities(amenityTags),
+          images: finalImages,
         }),
       })
       const data = await res.json() as { listing?: Listing; error?: string }
@@ -308,6 +439,12 @@ export function EditListingModal({ listing, onSaved, onClose }: EditListingModal
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Photos */}
+          <div>
+            <p className="text-xs font-medium text-zinc-400 uppercase tracking-wide mb-2">Photos</p>
+            <ImageEditor images={images} setImages={setImages} />
           </div>
 
           {/* Unit details */}
