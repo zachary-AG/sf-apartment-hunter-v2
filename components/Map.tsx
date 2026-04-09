@@ -371,7 +371,8 @@ export function Map({ listings, showCrime = false, hoveredListingId, workLocatio
                   )}
                 </div>
               )}
-              <p className="font-medium text-zinc-900 leading-snug">{selectedListing.address}</p>
+              <p className="font-medium text-zinc-900 leading-snug">{selectedListing.title || selectedListing.address}</p>
+              {selectedListing.title && <p className="text-zinc-500 text-xs mt-0.5 leading-snug">{selectedListing.address}</p>}
               <p className="text-zinc-600 mt-0.5">
                 {selectedListing.price
                   ? selectedListing.price_max && selectedListing.price_max !== selectedListing.price
