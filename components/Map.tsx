@@ -285,7 +285,7 @@ export function Map({ listings, showCrime = false, hoveredListingId, workLocatio
     )
   }
 
-  const popupImages = (selectedListing?.images ?? []).filter(Boolean)
+  const popupImages = (selectedListing?.images ?? []).filter((img): img is string => typeof img === 'string' && img.length > 0)
   const popupHasMultiple = popupImages.length > 1
 
   return (
