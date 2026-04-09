@@ -41,6 +41,7 @@ export interface Listing {
   notes: string | null
   available_date: string | null
   amenities: Amenities | null
+  starred: boolean
   created_at: string
   updated_at: string
 }

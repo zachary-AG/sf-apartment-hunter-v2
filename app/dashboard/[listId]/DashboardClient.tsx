@@ -43,6 +43,7 @@ export function DashboardClient({
   const [commutes, setCommutes] = useState<Record<string, ListingCommute[]>>(initialCommutes)
   const [showAddModal, setShowAddModal] = useState(false)
   const [showCrime, setShowCrime] = useState(false)
+  const [showStarredOnly, setShowStarredOnly] = useState(false)
   const [hoveredListingId, setHoveredListingId] = useState<string | null>(null)
   const [crimeLoading, setCrimeLoading] = useState(false)
   const [crimeToast, setCrimeToast] = useState<string | null>(null)
@@ -94,6 +95,10 @@ export function DashboardClient({
     })
   }
 
+  function handleStar(id: string, starred: boolean) {
+    setListings(prev => prev.map(l => l.id === id ? { ...l, starred } : l))
+  }
+
   async function handleDeleteList() {
     if (!confirm(`Delete "${listName}"? All listings will be permanently removed.`)) return
     setDeleting(true)
@@ -115,6 +120,8 @@ export function DashboardClient({
 
   const hasMultipleMembers = members.length > 1
   const isOwner = members.find(m => m.user_id === currentUserId)?.role === 'owner'
+  const visibleListings = showStarredOnly ? listings.filter(l => l.starred) : listings
+  const starredCount = listings.filter(l => l.starred).length
 
   return (
     <div className="flex h-screen overflow-hidden bg-zinc-50">
@@ -195,10 +202,27 @@ export function DashboardClient({
           </button>
         </div>
 
-        {/* Listing count */}
+        {/* Listing count + filter */}
         {listings.length > 0 && (
-          <div className="px-5 pt-3 pb-1">
-            <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">{listings.length} listing{listings.length !== 1 ? 's' : ''}</p>
+          <div className="px-5 pt-3 pb-1 flex items-center justify-between">
+            <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">
+              {showStarredOnly ? `${visibleListings.length} starred` : `${listings.length} listing${listings.length !== 1 ? 's' : ''}`}
+            </p>
+            {starredCount > 0 && (
+              <button
+                onClick={() => setShowStarredOnly(v => !v)}
+                className={`flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full transition-colors ${
+                  showStarredOnly
+                    ? 'bg-amber-100 text-amber-700'
+                    : 'text-zinc-400 hover:text-amber-600'
+                }`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill={showStarredOnly ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                </svg>
+                {showStarredOnly ? 'Starred only' : `${starredCount} starred`}
+              </button>
+            )}
           </div>
         )}
 
@@ -208,15 +232,21 @@ export function DashboardClient({
               <p className="text-sm font-medium text-zinc-500">No listings yet</p>
               <p className="text-xs text-zinc-400">Paste a Craigslist, Zillow, or Apartments.com URL to get started.</p>
             </div>
+          ) : visibleListings.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full pb-16 gap-2 text-center px-8">
+              <p className="text-sm font-medium text-zinc-500">No starred listings</p>
+              <p className="text-xs text-zinc-400">Star listings to save your favorites.</p>
+            </div>
           ) : (
             <div className="py-2">
-              {listings.map(listing => (
+              {visibleListings.map(listing => (
                 <ListingCard
                   key={listing.id}
                   listing={listing}
                   commutes={commutes[listing.id] ?? []}
                   listId={listId}
                   onDelete={handleDelete}
+                  onStar={handleStar}
                   onHover={setHoveredListingId}
                 />
               ))}
@@ -248,7 +278,7 @@ export function DashboardClient({
         </div>
 
         <Map
-          listings={listings}
+          listings={visibleListings}
           showCrime={showCrime}
           hoveredListingId={hoveredListingId}
           workLocations={workLocations}

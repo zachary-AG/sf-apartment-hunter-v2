@@ -23,7 +23,7 @@ export async function PATCH(req: NextRequest, { params }: Props) {
   const body = await req.json() as Record<string, unknown>
 
   const allowedFields = [
-    'notes', 'status',
+    'notes', 'status', 'starred',
     'title', 'address', 'lat', 'lng',
     'price', 'beds', 'baths', 'sqft',
     'description', 'available_date', 'amenities', 'images',
